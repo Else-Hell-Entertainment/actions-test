@@ -1,0 +1,54 @@
+
+name: Issue Assigned
+
+on:
+  issues:
+    types: [assigned]
+
+jobs:
+  task-branch:
+    if: contains(github.event.issue.labels.*.name, 'task')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find parent issue
+        id: parent
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const links = await github.rest.issues.listEvents({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
+            const parent = links.data.find(e => e.event === "linked");
+            return { parent: parent?.source?.issue?.title };
+
+      - name: Create branch
+        uses: peter-evans/create-branch@v5
+        with:
+          branch: ${{ steps.parent.outputs.parent }}.${{ github.event.issue.title }}
+          base: ${{ steps.parent.outputs.parent }}
+
+      - name: Move issue to In Progress
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.projects.updateCard({
+              card_id: context.payload.project_card.id,
+              state: "In Progress"
+            })
+
+      - name: Move parent to In Progress
+        if: steps.parent.outputs.parent != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+            github.rest.projects.updateCard({
+              card_id: issue.data.project_card.id,
+              state: "In Progress"
+            })
