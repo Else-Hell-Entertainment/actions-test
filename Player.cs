@@ -1,3 +1,9 @@
-public class Player {
-    public Player() { }
+public class Player
+{
+    private Health _health = null;
+
+    public Player()
+    {
+        _health = new Health();
+    }
 }
