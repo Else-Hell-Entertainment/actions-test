@@ -6,12 +6,13 @@ permissions:
   contents: write
 
 on:
-  workflow_dispatch:
+  issues:
+    types: opened
 
 jobs:
   create-branch:
+    if: contains(github.event.issue.title, '[Feat]')
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -21,18 +22,21 @@ jobs:
       - name: Configure git
         run: |
           git config user.email "github-actions@github.com"
-          git config user.name "GitHub Actions"
+          git config user.name "GitHub Actions"        
 
       - name: Create new branch and push
         env:
-          BRANCH_NAME: feature/new-branch
+          BRANCH_NAME: echo ${{ github.event.issue.title }} | sed -e 's/\[.*\]:[ ]*//I' -e 's/[A-Z]/\L&/g' -e 's/[^ a-z0-9]//g' -e 's/ /-/g' }}
+          SOURCE: main
+          FULL_BRANCH_NAME: $SOURCE.$BRANCH_NAME
         run: |
           # Check if branch exists on remote
-          if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
-            echo "Branch already exists: $BRANCH_NAME"
-            exit 0
-          fi
+          echo $FULL_BRANCH_NAME
+          #if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
+          #  echo "Branch already exists: $BRANCH_NAME"
+          #  exit 0
+          #fi
 
           # Create branch and push
-          git checkout -b "$BRANCH_NAME"
-          git push origin "$BRANCH_NAME"
+          #git checkout -b "$BRANCH_NAME"
+          #git push origin "$BRANCH_NAME"
