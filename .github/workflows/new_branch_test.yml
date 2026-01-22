@@ -28,9 +28,9 @@ jobs:
         env:
           BRANCH_NAME: echo ${{ github.event.issue.title }} | sed -e 's/\[.*\]:[ ]*//I' -e 's/[A-Z]/\L&/g' -e 's/[^ a-z0-9]//g' -e 's/ /-/g' }}
           SOURCE: main
-          FULL_BRANCH_NAME: $SOURCE.$BRANCH_NAME
         run: |
           # Check if branch exists on remote
+          FULL_BRANCH_NAME=$SOURCE.$BRANCH_NAME
           echo $FULL_BRANCH_NAME
           #if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
           #  echo "Branch already exists: $BRANCH_NAME"
