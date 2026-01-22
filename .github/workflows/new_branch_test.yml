@@ -31,7 +31,7 @@ jobs:
         run: |
           # Check if branch exists on remote
           BRANCH_NAME=$(echo $TITLE | sed -e 's/\[.*\]:[ ]*//I' -e 's/[A-Z]/\L&/g' -e 's/[^ a-z0-9]//g' -e 's/ /-/g')
-          FULL_BRANCH_NAME=$SOURCE.$BRANCH_NAME
+          FULL_BRANCH_NAME=$BRANCH_NAME
           git checkout $SOURCE
           
           if git ls-remote --heads origin "$FULL_BRANCH_NAME" | grep -q "$FULL_BRANCH_NAME"; then
@@ -42,3 +42,9 @@ jobs:
           # Create branch and push
           git checkout -b "$FULL_BRANCH_NAME"
           git push origin "$FULL_BRANCH_NAME"
+
+      - name: Link branch to issue
+        run: |
+          echo $TITLE
+          
+        
