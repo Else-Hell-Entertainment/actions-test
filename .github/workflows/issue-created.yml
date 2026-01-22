@@ -220,16 +220,35 @@ jobs:
 
           echo "Created branch $BRANCH from main."
 
-      # 4.3 Link pull branch to issue via comment
-      - name: Comment on issue with branch link
-        if: steps.branch_name.outputs.branch != '' && always()
+      # 4.3 Link pull request to issue
+      
+      - name: Check if PR already exists for this branch
+        id: check_pr
+        if: steps.branch_name.outputs.branch != ''
+        env:
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ steps.branch_name.outputs.branch }}
+        run: |
+          existing_prs=$(gh api "repos/$REPO/pulls" \
+            -f head="$REPO:$BRANCH" \
+            -f state="all" \
+            --jq 'length')
+
+          echo "count=$existing_prs" >> "$GITHUB_OUTPUT"
+
+      - name: Create draft pull request linked to issue
+        if: steps.branch_name.outputs.branch != '' && steps.check_pr.outputs.count == '0'
         env:
           REPO: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           BRANCH: ${{ steps.branch_name.outputs.branch }}
         run: |
-          url="https://github.com/$REPO/tree/$BRANCH"
-          body="A feature branch has been created for this issue:\n\n\`$BRANCH\`\n\n$url"
+          title="feat: ${BRANCH#feat/}"
+          body="Draft PR for feature branch \`$BRANCH\`, linked to issue #$ISSUE_NUMBER.\n\nCloses #$ISSUE_NUMBER"
 
-          gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-            -f body="$body"
+          gh api "repos/$REPO/pulls" \
+            -f title="$title" \
+            -f head="$BRANCH" \
+            -f base="main" \
+            -f body="$body" \
+            -f draft=true
