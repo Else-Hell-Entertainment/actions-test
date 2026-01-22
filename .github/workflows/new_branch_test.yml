@@ -1,0 +1,34 @@
+
+name: Create Branch
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create-branch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # IMPORTANT: allows creating and pushing branches
+
+      - name: Configure git
+        run: |
+          git config user.email "github-actions@github.com"
+          git config user.name "GitHub Actions"
+
+      - name: Create new branch and push
+        env:
+          BRANCH_NAME: feature/new-branch
+        run: |
+          # Check if branch exists on remote
+          if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
+            echo "Branch already exists: $BRANCH_NAME"
+            exit 0
+          fi
+
+          # Create branch and push
+          git checkout -b "$BRANCH_NAME"
+          git push origin "$BRANCH_NAME"
