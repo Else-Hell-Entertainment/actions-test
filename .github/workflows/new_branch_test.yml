@@ -26,17 +26,19 @@ jobs:
 
       - name: Create new branch and push
         env:
-          BRANCH_NAME: echo ${{ github.event.issue.title }} | sed -e 's/\[.*\]:[ ]*//I' -e 's/[A-Z]/\L&/g' -e 's/[^ a-z0-9]//g' -e 's/ /-/g' }}
+          TITLE: ${{ github.event.issue.title }}
           SOURCE: main
         run: |
           # Check if branch exists on remote
+          BRANCH_NAME=$(echo $TITLE | sed -e 's/\[.*\]:[ ]*//I' -e 's/[A-Z]/\L&/g' -e 's/[^ a-z0-9]//g' -e 's/ /-/g')
           FULL_BRANCH_NAME=$SOURCE.$BRANCH_NAME
-          echo $FULL_BRANCH_NAME
-          #if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
-          #  echo "Branch already exists: $BRANCH_NAME"
+          git checkout $SOURCE
+          
+          #if git ls-remote --heads origin "$FULL_BRANCH_NAME" | grep -q "$FULL_BRANCH_NAME"; then
+          #  echo "Branch already exists: $FULL_BRANCH_NAME"
           #  exit 0
           #fi
 
           # Create branch and push
-          #git checkout -b "$BRANCH_NAME"
-          #git push origin "$BRANCH_NAME"
+          #git checkout -b "$FULL_BRANCH_NAME"
+          #git push origin "$FULL_BRANCH_NAME"
