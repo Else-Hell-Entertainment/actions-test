@@ -1,6 +1,10 @@
 
 name: Create Branch
 
+
+permissions:
+  contents: write
+
 on:
   workflow_dispatch:
 
