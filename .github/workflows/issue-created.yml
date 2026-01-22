@@ -1,0 +1,145 @@
+
+name: Set Project Status to Todo
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  set-status-todo:
+    runs-on: ubuntu-latest
+
+    # Adjust these to match your setup
+    env:
+      GH_TOKEN: ${{ secrets.PROJECTS_PAT }}     # PAT with access to the private project
+      OWNER: Else-Hell-Entertainment              # org login or user login
+      PROJECT_NUMBER: 13                       # project number as shown in the project URL
+
+    steps:
+      - name: Get project & Status/Todo IDs
+        id: get_project
+        run: |
+          # Fetch the project and its fields
+          project=$(
+            gh api graphql -f query='
+              query($owner:String!, $number:Int!) {
+                organization(login: $owner) {        # CHANGE to "user" if this is a user-owned project
+                  projectV2(number: $number) {
+                    id
+                    fields(first: 50) {
+                      nodes {
+                        ... on ProjectV2SingleSelectField {
+                          id
+                          name
+                          options {
+                            id
+                            name
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ' -f owner="$OWNER" -F number=$PROJECT_NUMBER
+          )
+
+          # If your project is under a *user* account, replace "organization" above with "user"
+          # and update these jq paths accordingly.
+
+          project_id=$(echo "$project" | jq -r '.data.organization.projectV2.id')
+          status_field_id=$(
+            echo "$project" |
+            jq -r '.data.organization.projectV2.fields.nodes[]
+                   | select(.name=="Status") 
+                   | .id'
+          )
+          todo_option_id=$(
+            echo "$project" |
+            jq -r '.data.organization.projectV2.fields.nodes[]
+                   | select(.name=="Status")
+                   | .options[]
+                   | select(.name=="Todo")
+                   | .id'
+          )
+
+          echo "project_id=$project_id" >> $GITHUB_OUTPUT
+          echo "status_field_id=$status_field_id" >> $GITHUB_OUTPUT
+          echo "todo_option_id=$todo_option_id" >> $GITHUB_OUTPUT
+
+      - name: Find this issue's project item
+        id: get_item
+        env:
+          ISSUE_ID: ${{ github.event.issue.node_id }}
+          PROJECT_ID: ${{ steps.get_project.outputs.project_id }}
+        run: |
+          # Get project items attached to this issue
+          items=$(
+            gh api graphql -f query='
+              query($issueId:ID!) {
+                node(id: $issueId) {
+                  ... on Issue {
+                    projectItems(first: 20, includeArchived: false) {
+                      nodes {
+                        id
+                        project {
+                          ... on ProjectV2 {
+                            id
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ' -F issueId="$ISSUE_ID"
+          )
+
+          item_id=$(
+            echo "$items" |
+            jq -r --arg PROJECT_ID "$PROJECT_ID" '
+              .data.node.projectItems.nodes[]
+              | select(.project.id == $PROJECT_ID)
+              | .id
+            '
+          )
+
+          if [ -z "$item_id" ] || [ "$item_id" = "null" ]; then
+            echo "No project item found for this issue in the target project. Exiting."
+            exit 0
+          fi
+
+          echo "item_id=$item_id" >> $GITHUB_OUTPUT
+
+      - name: Set Status = Todo
+        env:
+          PROJECT_ID: ${{ steps.get_project.outputs.project_id }}
+          ITEM_ID: ${{ steps.get_item.outputs.item_id }}
+          STATUS_FIELD_ID: ${{ steps.get_project.outputs.status_field_id }}
+          TODO_OPTION_ID: ${{ steps.get_project.outputs.todo_option_id }}
+        run: |
+          gh api graphql -f query='
+            mutation(
+              $projectId: ID!,
+              $itemId: ID!,
+              $fieldId: ID!,
+              $optionId: String!
+            ) {
+              updateProjectV2ItemFieldValue(
+                input: {
+                  projectId: $projectId
+                  itemId: $itemId
+                  fieldId: $fieldId
+                  value: { singleSelectOptionId: $optionId }
+                }
+              ) {
+                projectV2Item {
+                  id
+                }
+              }
+            }
+          ' \
+          -F projectId="$PROJECT_ID" \
+          -F itemId="$ITEM_ID" \
+          -F fieldId="$STATUS_FIELD_ID" \
+          -F optionId="$TODO_OPTION_ID"
