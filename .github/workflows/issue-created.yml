@@ -1,29 +1,35 @@
 
-name: Set Project Status to Todo
+name: Project Status & Feature Branch
 
 on:
   issues:
     types: [opened]
 
+permissions:
+  contents: write    # needed to create branches
+  issues: write      # needed to comment on issues
+
 jobs:
-  set-status-todo:
+  handle-issue:
     runs-on: ubuntu-latest
 
-    # Adjust these to match your setup
     env:
-      GH_TOKEN: ${{ secrets.PROJECTS_PAT }}     # PAT with access to the private project
-      OWNER: Else-Hell-Entertainment              # org login or user login
-      PROJECT_NUMBER: 13                       # project number as shown in the project URL
+      # PAT with access to the private project (same as before)
+      GH_TOKEN: ${{ secrets.PROJECTS_PAT }}
+      OWNER: Else-Hell-Entertainment          # org login or user login
+      PROJECT_NUMBER: 13                    # project number from project URL
 
     steps:
+      # ----------------------------------------
+      # 1. Get project and Status/Todo field IDs
+      # ----------------------------------------
       - name: Get project & Status/Todo IDs
         id: get_project
         run: |
-          # Fetch the project and its fields
           project=$(
             gh api graphql -f query='
               query($owner:String!, $number:Int!) {
-                organization(login: $owner) {        # CHANGE to "user" if this is a user-owned project
+                organization(login: $owner) {        # CHANGE to "user" if user-owned
                   projectV2(number: $number) {
                     id
                     fields(first: 50) {
@@ -44,14 +50,14 @@ jobs:
             ' -f owner="$OWNER" -F number=$PROJECT_NUMBER
           )
 
-          # If your project is under a *user* account, replace "organization" above with "user"
-          # and update these jq paths accordingly.
+          # If your project is under a *user* account, replace "organization" with "user"
+          # and update the jq paths below accordingly (.data.user...).
 
           project_id=$(echo "$project" | jq -r '.data.organization.projectV2.id')
           status_field_id=$(
             echo "$project" |
             jq -r '.data.organization.projectV2.fields.nodes[]
-                   | select(.name=="Status") 
+                   | select(.name=="Status")
                    | .id'
           )
           todo_option_id=$(
@@ -67,13 +73,15 @@ jobs:
           echo "status_field_id=$status_field_id" >> $GITHUB_OUTPUT
           echo "todo_option_id=$todo_option_id" >> $GITHUB_OUTPUT
 
+      # ----------------------------------------
+      # 2. Find the project item for this issue
+      # ----------------------------------------
       - name: Find this issue's project item
         id: get_item
         env:
           ISSUE_ID: ${{ github.event.issue.node_id }}
           PROJECT_ID: ${{ steps.get_project.outputs.project_id }}
         run: |
-          # Get project items attached to this issue
           items=$(
             gh api graphql -f query='
               query($issueId:ID!) {
@@ -105,12 +113,15 @@ jobs:
           )
 
           if [ -z "$item_id" ] || [ "$item_id" = "null" ]; then
-            echo "No project item found for this issue in the target project. Exiting."
+            echo "No project item found for this issue in the target project. Exiting status update."
             exit 0
           fi
 
           echo "item_id=$item_id" >> $GITHUB_OUTPUT
 
+      # ----------------------------------------
+      # 3. Set Status = Todo in the project
+      # ----------------------------------------
       - name: Set Status = Todo
         env:
           PROJECT_ID: ${{ steps.get_project.outputs.project_id }}
@@ -143,3 +154,82 @@ jobs:
           -F itemId="$ITEM_ID" \
           -F fieldId="$STATUS_FIELD_ID" \
           -F optionId="$TODO_OPTION_ID"
+
+      # =====================================================================
+      # 4. FEATURE BRANCH PART
+      #    Only run if this is a "Feature" issue:
+      #    we detect it by the "[Feat]:" prefix in the title.
+      # =====================================================================
+
+      # 4.1 Build the branch name from the issue title
+      - name: Build feature branch name (feat/...)
+        id: branch_name
+        if: startsWith(github.event.issue.title, '[Feat]:')
+        run: |
+          node << 'EOF'
+          const fs = require('fs');
+
+          const title = process.env.ISSUE_TITLE || '';
+          // Remove "[Feat]: " prefix (case-insensitive, extra spaces allowed)
+          const withoutPrefix = title.replace(/^\s*\[feat\]\s*:\s*/i, '');
+
+          // Build slug:
+          //  - lowercase
+          //  - remove non-alphanumeric (except space and dash)
+          //  - spaces -> dash
+          //  - collapse multiple dashes
+          //  - trim leading/trailing dashes
+          const slug = withoutPrefix
+            .toLowerCase()
+            .normalize('NFKD')
+            .replace(/[^a-z0-9\s-]/g, '')
+            .replace(/\s+/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
+
+          const branch = `feat/${slug || 'feature'}`;
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `branch=${branch}\n`);
+          EOF
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+
+      # 4.2 Create the branch from main
+      - name: Create feature branch from main
+        id: create_branch
+        if: steps.branch_name.outputs.branch != ''
+        env:
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ steps.branch_name.outputs.branch }}
+        run: |
+          echo "Creating branch: $BRANCH"
+
+          # Check if branch already exists
+          if gh api "repos/$REPO/git/ref/heads/${BRANCH#refs/heads/}" >/dev/null 2>&1; then
+            echo "Branch $BRANCH already exists. Skipping creation."
+            exit 0
+          fi
+
+          # Get SHA of main branch (change "main" if your default branch is different)
+          base_sha=$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')
+
+          # Create the new branch
+          gh api "repos/$REPO/git/refs" \
+            -f ref="refs/heads/$BRANCH" \
+            -f sha="$base_sha"
+
+          echo "Created branch $BRANCH from main."
+
+      # 4.3 Link pull branch to issue via comment
+      - name: Comment on issue with branch link
+        if: steps.branch_name.outputs.branch != '' && always()
+        env:
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          BRANCH: ${{ steps.branch_name.outputs.branch }}
+        run: |
+          url="https://github.com/$REPO/tree/$BRANCH"
+          body="A feature branch has been created for this issue:\n\n\`$BRANCH\`\n\n$url"
+
+          gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+            -f body="$body"
