@@ -222,6 +222,7 @@ jobs:
 
       # 4.3 Link pull request to issue
       
+      
       - name: Check if PR already exists for this branch
         id: check_pr
         if: steps.branch_name.outputs.branch != ''
@@ -229,12 +230,12 @@ jobs:
           REPO: ${{ github.repository }}
           BRANCH: ${{ steps.branch_name.outputs.branch }}
         run: |
-          existing_prs=$(gh api "repos/$REPO/pulls" \
-            -f head="$REPO:$BRANCH" \
-            -f state="all" \
+          existing_prs=$(gh api \
+            "repos/$REPO/pulls?head=$REPO:$BRANCH&state=all" \
             --jq 'length')
 
           echo "count=$existing_prs" >> "$GITHUB_OUTPUT"
+
 
       - name: Create draft pull request linked to issue
         if: steps.branch_name.outputs.branch != '' && steps.check_pr.outputs.count == '0'
